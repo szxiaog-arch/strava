@@ -2,13 +2,15 @@
 out/
 *.png
 _render_*.html
+_week_*.html
 __pycache__/
 result.json
 err.log
+cap.txt
 
 # 本地测试数据(acts.json 含 GPS 轨迹,不进仓库)
 acts*.json
-state*.json
+*state*.json
 
 # node 依赖(用 npm i playwright 自行安装)
 node_modules/
