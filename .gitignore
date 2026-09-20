@@ -1,0 +1,9 @@
+# 运行产物
+out/
+*.png
+_render_*.html
+__pycache__/
+
+# 本地测试数据(acts.json 含 GPS 轨迹,不进仓库)
+acts.json
+state*.json

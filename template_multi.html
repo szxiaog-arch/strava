@@ -31,6 +31,15 @@
   .effort-num { font-size:20px; font-weight:700; color:#f0854f; }
   .effort-bar { height:10px; border-radius:5px; background:var(--grid); overflow:hidden; }
   .effort-fill { height:100%; border-radius:5px; background:linear-gradient(90deg,var(--accent),#f0854f); }
+  .items { margin-bottom:40px; }
+  .items-label { font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:0.12em; margin-bottom:16px; }
+  .item { padding:16px 0 14px; border-bottom:1px solid var(--grid); }
+  .item:last-child { border-bottom:none; }
+  .item-top { display:flex; align-items:baseline; gap:14px; }
+  .item-time { width:60px; flex:none; font-size:16px; font-weight:650; color:var(--ink-2); }
+  .item-name { flex:1; font-size:19px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .item-main { flex:none; font-size:20px; font-weight:750; color:#f0854f; }
+  .item-sub { margin-top:6px; padding-left:74px; font-size:14px; color:var(--muted); }
   .footer { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--grid); padding-top:26px; }
   .footer-brand { display:flex; align-items:center; gap:10px; font-size:15px; color:var(--muted); font-weight:600; }
   .footer-tag { font-size:15px; color:var(--accent); font-weight:650; letter-spacing:0.04em; }
@@ -56,6 +65,10 @@
   </div>
   <div class="hero-label">{{HERO_LABEL}}</div>
   <div class="divider"></div>
+  <div class="items">
+    <div class="items-label">今日明细 · TODAY</div>
+{{ITEMS}}
+  </div>
   <div class="stats">
 {{STATS}}
   </div>

@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Strava 打卡图:时区判定 + 推送决策 + 出图。"""
+"""Strava 打卡图:时区判定 + 推送决策 + 出图。
+
+打卡口径(2026-09-20 合并版):**一天 = 一次打卡 = 一张卡**。
+同一天的多项运动合并到一张卡上;当天晚些时候又同步上来新活动时,
+输出 action="edit" 让调用方原地更新那张卡,而不是再发一张。
+"""
 import json, os, subprocess, sys
 from datetime import datetime, timedelta, timezone
 
@@ -9,6 +14,7 @@ WINDOW_OPEN_HOUR = 10     # 当地时间几点之后开始推送当天的新活�
 SAFETY_HOURS = 6          # 兜底:活动挂了这么久还没推,无视时区强推
 EMPTY_NOTE_HOUR = 21      # 当地时间几点之后,若当天无活动发一句提示
 FALLBACK_TZ = "Asia/Hong_Kong"
+KEEP_DAY_MESSAGES = 14    # day_messages 只留最近这些天,避免无限膨胀
 
 BADGES = {
     "Run": "🏃 跑步", "TrailRun": "🏃 越野跑", "Ride": "🚴 骑行",
@@ -23,6 +29,17 @@ def fmt_dur(sec):
     sec = int(round(sec))
     h, m, s = sec // 3600, (sec % 3600) // 60, sec % 60
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def fmt_pace(sec_per_km):
+    m, s = int(sec_per_km // 60), int(round(sec_per_km % 60))
+    if s == 60:
+        m, s = m + 1, 0
+    return f"{m}'{s:02d}\""
+
+
+def sm(act, key, default=0):
+    return (act.get("summary") or {}).get(key) or default
 
 
 def start_point(act):
@@ -76,10 +93,49 @@ def place_of(act):
         return ""
 
 
-def render(act, outdir):
-    s = act.get("summary", {})
+def day_place(acts):
+    """合并卡的位置:优先取第一个有 GPS 的活动。
+    直接用最后一项会把室内力量训练的 Indoor 盖掉户外跑的真实地点。"""
+    for a in acts:
+        if a.get("reduced_polyline"):
+            return place_of(a)
+    return place_of(acts[-1])
+
+
+def day_key(act):
+    return act["start_local"][:10]
+
+
+def monthly_day_count(all_acts, day):
+    """day 所在的月份里,截至 day(含)共有几个「有运动的日子」。
+
+    按天计,不按活动条数 —— 一天练两次仍只算一次打卡。
+    精度取决于 acts.json 是否覆盖整月;调用方应传足够长的列表。
+    """
+    ym = day[:7]
+    days = {day_key(a) for a in all_acts if day_key(a)[:7] == ym and day_key(a) <= day}
+    return max(len(days), 1)
+
+
+def fill(tpl_name, mapping):
+    html = open(os.path.join(HERE, tpl_name), encoding="utf-8").read()
+    for k, v in mapping.items():
+        html = html.replace(k, str(v))
+    return html
+
+
+def shoot(html, png, outdir, tag):
+    tmp = os.path.join(outdir, f"_render_{tag}.html")
+    open(tmp, "w", encoding="utf-8").write(html)
+    # 截图子进程的 stdout 必须吃掉,否则会污染本脚本输出的 JSON
+    subprocess.run(["node", os.path.join(HERE, "shot.js"), tmp, png],
+                   check=True, stdout=subprocess.DEVNULL)
+    return png
+
+
+def render_single(act, outdir, monthly):
     dt = datetime.fromisoformat(act["start_local"])
-    dist, mov = s.get("distance") or 0, s.get("moving_time") or 0
+    dist, mov = sm(act, "distance"), sm(act, "moving_time")
     sport = act.get("sport_type", "")
     stats = []
 
@@ -90,48 +146,154 @@ def render(act, outdir):
             if mov:
                 stats.append(("平均速度", f"{dist/1000/(mov/3600):.1f}<span class='u'>km/h</span>"))
         elif mov:
-            p = mov / (dist / 1000)
-            stats.append(("平均配速", f"{int(p//60)}'{int(round(p%60)):02d}\"<span class='u'>/km</span>"))
-        stats.append(("爬升", f"{round(s.get('elevation_gain') or 0)}<span class='u'>m</span>"))
-        if s.get("total_calories"):
-            stats.append(("卡路里", f"{round(s['total_calories'])}<span class='u'>kcal</span>"))
-        if s.get("avg_cadence"):
-            c = s["avg_cadence"]
+            stats.append(("平均配速", f"{fmt_pace(mov/(dist/1000))}<span class='u'>/km</span>"))
+        stats.append(("爬升", f"{round(sm(act,'elevation_gain'))}<span class='u'>m</span>"))
+        if sm(act, "total_calories"):
+            stats.append(("卡路里", f"{round(sm(act,'total_calories'))}<span class='u'>kcal</span>"))
+        if sm(act, "avg_cadence"):
+            c = sm(act, "avg_cadence")
             stats.append(("平均踏频", f"{round(c)}<span class='u'>rpm</span>") if sport in ("Ride", "VirtualRide")
                          else ("平均步频", f"{round(c*2)}<span class='u'>spm</span>"))
-        if s.get("max_speed"):
-            stats.append(("最大速度", f"{s['max_speed']:.1f}<span class='u'>m/s</span>"))
+        if sm(act, "max_speed"):
+            stats.append(("最大速度", f"{sm(act,'max_speed'):.1f}<span class='u'>m/s</span>"))
     else:
         hero = (str(int(round(mov / 60))), "分钟", "时长 · DURATION")
         stats.append(("运动时间", fmt_dur(mov)))
-        if s.get("total_calories"):
-            stats.append(("卡路里", f"{round(s['total_calories'])}<span class='u'>kcal</span>"))
-        if s.get("elapsed_time") and s["elapsed_time"] != mov:
-            stats.append(("总耗时", fmt_dur(s["elapsed_time"])))
+        if sm(act, "total_calories"):
+            stats.append(("卡路里", f"{round(sm(act,'total_calories'))}<span class='u'>kcal</span>"))
+        if sm(act, "elapsed_time") and sm(act, "elapsed_time") != mov:
+            stats.append(("总耗时", fmt_dur(sm(act, "elapsed_time"))))
 
     stats_html = "\n".join(
         f'    <div class="stat"><div class="stat-label">{l}</div>'
         f'<div class="stat-value">{v}</div></div>' for l, v in stats[:6])
-    effort = round(s.get("relative_effort") or 0)
+    effort = round(sm(act, "relative_effort"))
 
-    html = open(os.path.join(HERE, "template.html"), encoding="utf-8").read()
-    for k, v in {
+    html = fill("template.html", {
         "{{LOCATION}}": place_of(act), "{{BADGE}}": BADGES.get(sport, "💪 运动"),
         "{{NAME}}": act.get("name", ""),
         "{{DATETIME}}": f"{dt.year}年{dt.month}月{dt.day}日 · {WEEKDAYS[dt.weekday()]} {dt:%H:%M}",
         "{{HERO_VALUE}}": hero[0], "{{HERO_UNIT}}": hero[1], "{{HERO_LABEL}}": hero[2],
-        "{{STATS}}": stats_html, "{{EFFORT}}": str(effort),
-        "{{EFFORT_PCT}}": str(min(effort, 100)),
-    }.items():
-        html = html.replace(k, v)
+        "{{STATS}}": stats_html, "{{EFFORT}}": effort,
+        "{{EFFORT_PCT}}": min(effort, 100), "{{MONTHLY}}": f"本月第 {monthly} 次",
+    })
+    png = os.path.join(outdir, f"strava-daka-{dt:%Y-%m-%d}.png")
+    return shoot(html, png, outdir, f"{dt:%Y%m%d}")
 
-    tmp = os.path.join(outdir, f"_render_{act['id']}.html")
-    png = os.path.join(outdir, f"strava-daka-{dt:%Y-%m-%d}-{act['id']}.png")
-    open(tmp, "w", encoding="utf-8").write(html)
-    # 截图子进程的 stdout 必须吃掉,否则会污染本脚本输出的 JSON
-    subprocess.run(["node", os.path.join(HERE, "shot.js"), tmp, png],
-                   check=True, stdout=subprocess.DEVNULL)
-    return png
+
+def render_multi(acts, outdir, monthly):
+    """同一天多项运动 → 一张合并卡。"""
+    acts = sorted(acts, key=lambda a: a["start_local"])
+    dt = datetime.fromisoformat(acts[0]["start_local"])
+    dist = sum(sm(a, "distance") for a in acts)
+    mov = sum(sm(a, "moving_time") or sm(a, "elapsed_time") for a in acts)
+    cal = sum(sm(a, "total_calories") for a in acts)
+    elev = sum(sm(a, "elevation_gain") for a in acts)
+    effort = round(sum(sm(a, "relative_effort") for a in acts))
+
+    rows = []
+    for a in acts:
+        at = datetime.fromisoformat(a["start_local"])
+        d, m = sm(a, "distance"), sm(a, "moving_time")
+        if d > 100:
+            main = f"{d/1000:.2f} km"
+            sub = f"{fmt_dur(m)} · {fmt_pace(m/(d/1000))}/km" if m else fmt_dur(m)
+            if sm(a, "elevation_gain"):
+                sub += f" · 爬升 {round(sm(a,'elevation_gain'))} m"
+        else:
+            main = fmt_dur(m or sm(a, "elapsed_time"))
+            sub = "无距离记录"
+        if sm(a, "total_calories"):
+            sub += f" · {round(sm(a,'total_calories'))} kcal"
+        rows.append(
+            f'    <div class="item"><div class="item-top">'
+            f'<span class="item-time">{at:%H:%M}</span>'
+            f'<span class="item-name">{BADGES.get(a.get("sport_type",""), "💪 运动")} {a.get("name","")}</span>'
+            f'<span class="item-main">{main}</span></div>'
+            f'<div class="item-sub">{sub}</div></div>')
+
+    stats = []
+    if dist > 100:
+        # 配速只用有距离的活动的时间 —— 把力量训练的时长算进来会得出荒谬数字
+        run_mov = sum(sm(a, "moving_time") for a in acts if sm(a, "distance") > 100)
+        if run_mov:
+            stats.append(("跑步配速", f"{fmt_pace(run_mov/(dist/1000))}<span class='u'>/km</span>"))
+    stats.append(("总时长", fmt_dur(mov)))
+    if elev:
+        stats.append(("总爬升", f"{round(elev)}<span class='u'>m</span>"))
+    if cal:
+        stats.append(("总卡路里", f"{round(cal)}<span class='u'>kcal</span>"))
+    stats_html = "\n".join(
+        f'    <div class="stat"><div class="stat-label">{l}</div>'
+        f'<div class="stat-value">{v}</div></div>' for l, v in stats[:6])
+
+    if dist > 100:
+        hero = (f"{dist/1000:.2f}", "公里", "当日总距离 · TOTAL")
+    else:
+        hero = (str(int(round(mov / 60))), "分钟", "当日总时长 · TOTAL")
+
+    html = fill("template_multi.html", {
+        "{{LOCATION}}": day_place(acts), "{{BADGE}}": f"💪 今日 {len(acts)} 项",
+        "{{NAME}}": f"{dt.month}月{dt.day}日 运动汇总",
+        "{{DATETIME}}": f"{dt.year}年{dt.month}月{dt.day}日 · {WEEKDAYS[dt.weekday()]}",
+        "{{HERO_VALUE}}": hero[0], "{{HERO_UNIT}}": hero[1], "{{HERO_LABEL}}": hero[2],
+        "{{ITEMS}}": "\n".join(rows), "{{STATS}}": stats_html,
+        "{{EFFORT}}": effort, "{{EFFORT_PCT}}": min(effort, 100),
+        "{{MONTHLY}}": f"本月第 {monthly} 次",
+    })
+    png = os.path.join(outdir, f"strava-daka-{dt:%Y-%m-%d}.png")
+    return shoot(html, png, outdir, f"{dt:%Y%m%d}")
+
+
+def caption_of(acts, monthly):
+    """完整数据写进 caption。
+
+    图片走 Telegram 媒体 CDN,说明文字随消息本体走 API —— 两条路。
+    图加载不出来时数据也一个不少。上限 1024 字符。
+    """
+    acts = sorted(acts, key=lambda a: a["start_local"])
+    dt = datetime.fromisoformat(acts[0]["start_local"])
+    head = f"{dt.month}月{dt.day}日 · {WEEKDAYS[dt.weekday()]}"
+    if len(acts) == 1:
+        a = acts[0]
+        d, m = sm(a, "distance"), sm(a, "moving_time")
+        L = [f'{BADGES.get(a.get("sport_type",""), "💪 运动")} {a.get("name","")}',
+             f'{head} {datetime.fromisoformat(a["start_local"]):%H:%M}', ""]
+        if d > 100:
+            L += [f"距离 {d/1000:.2f} km", f"时间 {fmt_dur(m)}"]
+            if m:
+                L.append(f"配速 {fmt_pace(m/(d/1000))}/km")
+            if sm(a, "elevation_gain"):
+                L.append(f"爬升 {round(sm(a,'elevation_gain'))} m")
+        else:
+            L.append(f"时长 {fmt_dur(m or sm(a,'elapsed_time'))}")
+        if sm(a, "total_calories"):
+            L.append(f"卡路里 {round(sm(a,'total_calories'))} kcal")
+        if sm(a, "relative_effort"):
+            L.append(f"相对努力 {round(sm(a,'relative_effort'))}")
+    else:
+        L = [f"{head} · 今日 {len(acts)} 项", ""]
+        for a in acts:
+            at = datetime.fromisoformat(a["start_local"])
+            d, m = sm(a, "distance"), sm(a, "moving_time")
+            L.append(f'{at:%H:%M} {BADGES.get(a.get("sport_type",""), "💪 运动")} {a.get("name","")}')
+            if d > 100:
+                L.append(f'     {d/1000:.2f} km · {fmt_dur(m)}'
+                         + (f' · {fmt_pace(m/(d/1000))}/km' if m else ''))
+            else:
+                L.append(f'     {fmt_dur(m or sm(a,"elapsed_time"))}')
+        L.append("")
+        tot = []
+        dist = sum(sm(a, "distance") for a in acts)
+        if dist > 100:
+            tot.append(f"总距离 {dist/1000:.2f} km")
+        tot.append(f'总时长 {fmt_dur(sum(sm(a,"moving_time") or sm(a,"elapsed_time") for a in acts))}')
+        cal = sum(sm(a, "total_calories") for a in acts)
+        if cal:
+            tot.append(f"总卡路里 {round(cal)} kcal")
+        L.append(" · ".join(tot))
+    L += ["", f"📍 {day_place(acts)}", f"本月第 {monthly} 次"]
+    return "\n".join(L)[:1020]
 
 
 def main():
@@ -152,8 +314,8 @@ def main():
 
     processed = set(str(i) for i in state.get("processed_ids", []))
     pending = dict(state.get("pending", {}))
+    day_messages = dict(state.get("day_messages", {}))
 
-    # 记录每条未推送活动的"首次看到时间",供兜底规则用
     fresh = [a for a in acts if str(a["id"]) not in processed]
     for a in fresh:
         pending.setdefault(str(a["id"]), now_utc.isoformat())
@@ -162,22 +324,40 @@ def main():
             pending.pop(k)
 
     window_open = local_now.hour >= WINDOW_OPEN_HOUR
-    to_push = []
+
+    # 未推送的活动按「本地日期」分组 —— 一天一张卡
+    days = {}
     for a in fresh:
         seen = datetime.fromisoformat(pending[str(a["id"])])
         stale = (now_utc - seen) >= timedelta(hours=SAFETY_HOURS)
         if window_open or stale:                         # 时区判错也不会漏
-            to_push.append(a)
+            days.setdefault(day_key(a), []).append(a)
 
     cards = []
-    for a in sorted(to_push, key=lambda x: x["start_local"]):
+    for day in sorted(days):
+        # 这一天的全部活动(含已推送过的),这样补图时卡片是完整的一天
+        same_day = sorted([a for a in acts if day_key(a) == day],
+                          key=lambda x: x["start_local"])
+        monthly = monthly_day_count(acts, day)
         try:
-            cards.append({"id": str(a["id"]), "name": a.get("name", ""),
-                          "sport": a.get("sport_type", ""), "png": render(a, outdir)})
+            png = (render_single(same_day[0], outdir, monthly) if len(same_day) == 1
+                   else render_multi(same_day, outdir, monthly))
+        except Exception as e:
+            print(f"[error] render failed for {day}: {e}", file=sys.stderr)
+            continue
+        mid = day_messages.get(day)
+        cards.append({
+            "day": day,
+            "png": png,
+            "caption": caption_of(same_day, monthly),
+            "action": "edit" if mid else "send",
+            "message_id": mid,
+            "count": len(same_day),
+            "activity_ids": [str(a["id"]) for a in same_day],
+        })
+        for a in days[day]:
             processed.add(str(a["id"]))
             pending.pop(str(a["id"]), None)
-        except Exception as e:
-            print(f"[error] render failed for {a.get('id')}: {e}", file=sys.stderr)
 
     today = local_now.strftime("%Y-%m-%d")
     empty_note = (not cards and not fresh
@@ -187,6 +367,7 @@ def main():
     new_state = {
         "processed_ids": sorted(processed, key=int)[-30:],
         "pending": pending,
+        "day_messages": {k: v for k, v in sorted(day_messages.items())[-KEEP_DAY_MESSAGES:]},
         "last_empty_note": today if empty_note else state.get("last_empty_note", ""),
     }
     print(json.dumps({
