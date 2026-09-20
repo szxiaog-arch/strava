@@ -78,6 +78,8 @@ stdout 打印 JSON。
 | `EMPTY_NOTE_HOUR` | 21 | 当地时间几点后才发「休息日?」提醒 |
 | `FALLBACK_TZ` | Asia/Hong_Kong | 全是室内活动时的兜底时区 |
 | `KEEP_DAY_MESSAGES` | 14 | `day_messages` 只留最近多少天 |
+| `KEEP_PROCESSED` | 80 | `processed_ids` 保留多少条 |
+| `MAX_BACKFILL_DAYS` | 3 | 比这更早的日子不再补卡,只静默标记 |
 
 时区由最近一条带 GPS 的活动反推,人在国外跑一次户外就自动跟上。
 
@@ -88,6 +90,11 @@ stdout 打印 JSON。
 - **合并卡的地点取第一个有 GPS 的活动**。直接用最后一项,会被室内力量训练的
   「室内 · Indoor」盖掉户外跑的真实地点。
 - **「本月第 N 次」按天计,不按活动条数**。一天练两次仍然只算一次。
+- **`KEEP_PROCESSED` 必须大于 `acts.json` 的条数**。否则超出上限的旧活动会从
+  `processed_ids` 里掉出去,下次运行被当成新活动重发一遍。原来是 30,而 README
+  建议传 40 条 —— 实跑时一次性触发了 20 个旧日子的补卡,现已改为 80。
+- **`MAX_BACKFILL_DAYS` 是防刷屏的兜底**。state 丢失或换机器时,早于这个窗口的
+  日子只静默标记为已处理,不会把几个月的历史一次性全推给用户。
 
 依赖:`pip install polyline reverse-geocode timezonefinder`、`npm i playwright`
 timezonefinder 缺失时自动退回兜底时区,不影响出图。

@@ -15,6 +15,8 @@ SAFETY_HOURS = 6          # 兜底:活动挂了这么久还没推,无视时区�
 EMPTY_NOTE_HOUR = 21      # 当地时间几点之后,若当天无活动发一句提示
 FALLBACK_TZ = "Asia/Hong_Kong"
 KEEP_DAY_MESSAGES = 14    # day_messages 只留最近这些天,避免无限膨胀
+KEEP_PROCESSED = 80       # 必须 > acts.json 的条数,否则旧活动会被当新的重发一遍
+MAX_BACKFILL_DAYS = 3     # 比这更早的日子不再补卡,只静默标记 —— 防止 state 一丢就刷屏
 
 BADGES = {
     "Run": "🏃 跑步", "TrailRun": "🏃 越野跑", "Ride": "🚴 骑行",
@@ -334,7 +336,15 @@ def main():
             days.setdefault(day_key(a), []).append(a)
 
     cards = []
+    cutoff = (local_now.date() - timedelta(days=MAX_BACKFILL_DAYS)).isoformat()
     for day in sorted(days):
+        if day < cutoff:
+            # state 丢失或 acts.json 变长时,不要把几个月的历史一次性全推出去
+            for a in days[day]:
+                processed.add(str(a["id"]))
+                pending.pop(str(a["id"]), None)
+            print(f"[skip] {day} 早于回填窗口({MAX_BACKFILL_DAYS} 天),只标记不推送", file=sys.stderr)
+            continue
         # 这一天的全部活动(含已推送过的),这样补图时卡片是完整的一天
         same_day = sorted([a for a in acts if day_key(a) == day],
                           key=lambda x: x["start_local"])
@@ -365,7 +375,7 @@ def main():
                   and state.get("last_empty_note") != today)
 
     new_state = {
-        "processed_ids": sorted(processed, key=int)[-30:],
+        "processed_ids": sorted(processed, key=int)[-KEEP_PROCESSED:],
         "pending": pending,
         "day_messages": {k: v for k, v in sorted(day_messages.items())[-KEEP_DAY_MESSAGES:]},
         "last_empty_note": today if empty_note else state.get("last_empty_note", ""),
