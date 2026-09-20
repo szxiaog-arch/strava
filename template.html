@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  :root { --surface:#1a1a19; --page:#0d0d0d; --ink:#fff; --ink-2:#c3c2b7; --muted:#898781; --grid:#2c2c2a; --accent:#d95926; --accent-soft:rgba(217,89,38,0.14); }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Noto Sans CJK SC",sans-serif; background:var(--page); width:720px; }
+  .card { width:720px; background:linear-gradient(160deg,#212120 0%,var(--surface) 55%,#161615 100%); color:var(--ink); padding:52px 56px 44px; position:relative; overflow:hidden; }
+  .card::before { content:""; position:absolute; top:0; left:0; right:0; height:6px; background:linear-gradient(90deg,var(--accent),#f0854f); }
+  .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:40px; }
+  .athlete { display:flex; align-items:center; gap:14px; }
+  .avatar { width:52px; height:52px; border-radius:50%; background:var(--accent-soft); border:2px solid var(--accent); display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:700; color:var(--accent); }
+  .athlete-name { font-size:21px; font-weight:650; }
+  .athlete-sub { font-size:14px; color:var(--muted); margin-top:3px; }
+  .sport-badge { display:flex; align-items:center; gap:8px; background:var(--accent-soft); color:#f0854f; border:1px solid rgba(217,89,38,0.35); padding:8px 16px; border-radius:999px; font-size:15px; font-weight:600; }
+  .activity-name { font-size:34px; font-weight:750; margin-bottom:10px; }
+  .activity-time { font-size:16px; color:var(--ink-2); margin-bottom:42px; }
+  .hero { display:flex; align-items:baseline; gap:12px; margin-bottom:6px; }
+  .hero-value { font-size:108px; font-weight:800; line-height:1; letter-spacing:-0.02em; }
+  .hero-unit { font-size:30px; font-weight:600; color:var(--ink-2); }
+  .hero-label { font-size:15px; color:var(--muted); text-transform:uppercase; letter-spacing:0.14em; margin-bottom:40px; }
+  .divider { height:1px; background:var(--grid); margin-bottom:36px; }
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:34px 20px; margin-bottom:42px; }
+  .stat-label { font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:0.12em; margin-bottom:8px; }
+  .stat-value { font-size:31px; font-weight:700; }
+  .stat-value .u { font-size:16px; font-weight:500; color:var(--ink-2); margin-left:3px; }
+  .effort-wrap { margin-bottom:40px; }
+  .effort-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; }
+  .effort-title { font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:0.12em; }
+  .effort-num { font-size:20px; font-weight:700; color:#f0854f; }
+  .effort-bar { height:10px; border-radius:5px; background:var(--grid); overflow:hidden; }
+  .effort-fill { height:100%; border-radius:5px; background:linear-gradient(90deg,var(--accent),#f0854f); }
+  .footer { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--grid); padding-top:26px; }
+  .footer-brand { display:flex; align-items:center; gap:10px; font-size:15px; color:var(--muted); font-weight:600; }
+  .footer-tag { font-size:15px; color:var(--accent); font-weight:650; letter-spacing:0.04em; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="topbar">
+    <div class="athlete">
+      <div class="avatar">F</div>
+      <div>
+        <div class="athlete-name">Free Wu</div>
+        <div class="athlete-sub">{{LOCATION}}</div>
+      </div>
+    </div>
+    <div class="sport-badge">{{BADGE}}</div>
+  </div>
+  <div class="activity-name">{{NAME}}</div>
+  <div class="activity-time">{{DATETIME}}</div>
+  <div class="hero">
+    <div class="hero-value">{{HERO_VALUE}}</div>
+    <div class="hero-unit">{{HERO_UNIT}}</div>
+  </div>
+  <div class="hero-label">{{HERO_LABEL}}</div>
+  <div class="divider"></div>
+  <div class="stats">
+{{STATS}}
+  </div>
+  <div class="effort-wrap">
+    <div class="effort-head">
+      <div class="effort-title">相对努力程度 · RELATIVE EFFORT</div>
+      <div class="effort-num">{{EFFORT}}</div>
+    </div>
+    <div class="effort-bar"><div class="effort-fill" style="width:{{EFFORT_PCT}}%"></div></div>
+  </div>
+  <div class="footer">
+    <div class="footer-brand"><svg width="18" height="18" viewBox="0 0 24 24" fill="#d95926"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>Strava 每日打卡</div>
+    <div class="footer-tag"># 今日运动打卡 Day ✓</div>
+  </div>
+</div>
+</body>
+</html>
