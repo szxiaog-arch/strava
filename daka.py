@@ -298,8 +298,20 @@ def caption_of(acts, monthly):
     return "\n".join(L)[:1020]
 
 
+def load_acts(path):
+    """MCP 的 list_activities 返回 {"activities": [...]},直接 dump 会是对象;
+    有些调用方又会先剥成裸数组。两种都收,省得每次运行都在这里翻车。"""
+    d = json.load(open(path, encoding="utf-8"))
+    if isinstance(d, dict):
+        for k in ("activities", "data", "results"):
+            if isinstance(d.get(k), list):
+                return d[k]
+        raise SystemExit(f"{path}: 是对象但找不到 activities 数组,键有 {list(d)}")
+    return d
+
+
 def main():
-    acts = json.load(open(sys.argv[1], encoding="utf-8"))
+    acts = load_acts(sys.argv[1])
     state = json.load(open(sys.argv[2], encoding="utf-8")) if os.path.exists(sys.argv[2]) else {}
     outdir = os.path.abspath(sys.argv[3] if len(sys.argv) > 3 else HERE)
     os.makedirs(outdir, exist_ok=True)

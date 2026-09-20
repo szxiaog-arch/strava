@@ -22,7 +22,8 @@ Strava 每日打卡图的渲染脚本。由 Claude 的定时任务拉取执行,�
 python3 daka.py acts.json state.json out
 ```
 
-- `acts.json` — Strava `list_activities` 的返回数组(需 `include_polyline: true`)。
+- `acts.json` — Strava `list_activities` 的返回。**裸数组和 `{"activities": [...]}` 对象都接受**,
+  不用先剥壳(需 `include_polyline: true`)。
   **要覆盖到当月月初**,否则「本月第 N 次」会偏小。建议至少取 40 条。
 - `state.json` — 上次运行状态,首次可传 `{}`
 - `out` — 输出目录
@@ -90,6 +91,8 @@ stdout 打印 JSON。
 - **合并卡的地点取第一个有 GPS 的活动**。直接用最后一项,会被室内力量训练的
   「室内 · Indoor」盖掉户外跑的真实地点。
 - **「本月第 N 次」按天计,不按活动条数**。一天练两次仍然只算一次。
+- **acts.json 不用剥壳**。MCP 返回的是 `{"activities": [...]}`,daka.py 两种形态都收。
+  以前调用方得先写个 Python 一行流转换,每次运行白白多花几个 turn。
 - **`KEEP_PROCESSED` 必须大于 `acts.json` 的条数**。否则超出上限的旧活动会从
   `processed_ids` 里掉出去,下次运行被当成新活动重发一遍。原来是 30,而 README
   建议传 40 条 —— 实跑时一次性触发了 20 个旧日子的补卡,现已改为 80。
