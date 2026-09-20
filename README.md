@@ -9,12 +9,28 @@ Strava 每日打卡图的渲染脚本。由 Claude 的定时任务拉取执行,�
 
 | 文件 | 作用 |
 |---|---|
-| `daka.py` | 主逻辑:时区判定、按天聚合、推送决策、调用渲染、生成 caption |
+| `daka.py` | **日报**主逻辑:时区判定、按天聚合、推送决策、渲染、生成 caption |
 | `template.html` | 单项运动的卡片版式(深色主题,720px 宽,Strava 橙) |
 | `template_multi.html` | 同日多项运动的合并版式,多一段「今日明细」列表 |
-| `shot.js` | Playwright 截图,2 倍图导出 PNG |
+| `weekly.py` | **周报**主逻辑:按本地时区切周、只统计跑步、按周去重 |
+| `template_week.html` | 周报版式,含每次跑步的距离条和周同比 |
+| `shot.js` | Playwright 截图,2 倍图导出 PNG(日报周报共用) |
 
-四个文件必须在同一目录。
+同一目录。日报需要前三个 + shot.js;周报需要 weekly.py + template_week.html + shot.js。
+
+## 周报
+
+```
+python3 weekly.py acts.json state.json out
+```
+
+输出 `{tz, local_now, week, run_count, already_sent, card, state}`。
+`card` 为 null 表示本周没跑步、或这周已经发过了。
+
+**去重**:`state.weekly_sent` 记录已发过的周(周一日期)。手动触发过之后定时任务再跑到,
+`already_sent` 会是 true、`card` 为 null —— 不会重复发。调用方把返回的 `state` 原样写回即可。
+
+周界按**活动 GPS 反推的本地时区**算(周一 00:00 ~ 周日 23:59),人在国外也跟着走。
 
 ## 调用方式
 
