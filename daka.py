@@ -344,7 +344,12 @@ def main():
         if k in processed:
             pending.pop(k)
 
-    days_sent = list(state.get("days_sent", []))
+    days_sent = state.get("days_sent")
+    if days_sent is None:
+        # 老状态没有这个字段。直接当成空会让「升级当天」漏掉去重 ——
+        # 用已推送过的活动反推出哪些天出过卡,一次性补上。
+        days_sent = sorted({day_key(a) for a in acts if str(a["id"]) in processed})
+    days_sent = list(days_sent)
     window_open = FORCE or local_now.hour >= WINDOW_OPEN_HOUR
 
     # 未推送的活动按「本地日期」分组 —— 一天一张卡
