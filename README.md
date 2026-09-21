@@ -21,8 +21,11 @@ Strava 每日打卡图的渲染脚本。由 Claude 的定时任务拉取执行,�
 ## 周报
 
 ```
-python3 weekly.py acts.json state.json out
+python3 weekly.py acts.json state.json out [acts_poly.json]
 ```
+
+取数方式和 `daka.py` 一样:主列表 `first: 40`、`include_polyline: false`;
+轨迹另取 `first: 8`、`include_polyline: true`(周界要靠 GPS 反推本地时区)。
 
 输出 `{tz, local_now, week, run_count, already_sent, card, state}`。
 `card` 为 null 表示本周没跑步、或这周已经发过了。
