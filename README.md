@@ -35,14 +35,29 @@ python3 weekly.py acts.json state.json out
 ## 调用方式
 
 ```
-python3 daka.py acts.json state.json out
+DAKA_DAY_ONCE=1 python3 daka.py acts.json state.json out [acts_poly.json]
 ```
 
-- `acts.json` — Strava `list_activities` 的返回。**裸数组和 `{"activities": [...]}` 对象都接受**,
-  不用先剥壳(需 `include_polyline: true`)。
-  **要覆盖到当月月初**,否则「本月第 N 次」会偏小。建议至少取 40 条。
+- `acts.json` — Strava `list_activities` 的返回,取 `first: 40`、**`include_polyline: false`**。
+  **裸数组和 `{"activities": [...]}` 对象都接受**,不用先剥壳。
+  **要覆盖到当月月初**,否则「本月第 N 次」会偏小。
 - `state.json` — 上次运行状态,首次可传 `{}`
 - `out` — 输出目录
+- `acts_poly.json`(可选)— 第二次调用的返回,取 `first: 8`、**`include_polyline: true`**,
+  脚本会把其中的轨迹按 id 并进主列表。
+
+**为什么拆两次调用**:`include_polyline` 是全有或全无,40 条全带轨迹约 41KB,
+一次灌进上下文会撞到每分钟输入 token 的限流(2026-09-21 实测两个 run 各卡了 10 分半)。
+而轨迹只有两处要用 —— 判时区的「最近一条带 GPS 的活动」、当天要出卡那条;
+其余 30 多条只是用来数「本月第几次」。拆开后约 18KB。
+不传第四个参数也能跑,只是主列表若不带轨迹,时区会退回 `Asia/Hong_Kong`、地点显示「室内」。
+
+### 两个环境变量
+
+- `DAKA_DAY_ONCE=1` — 当天已出过卡(`state.days_sent` 里有这一天)就不再出第二张,
+  后来的新活动只标记不推送。**投递端无法编辑已发消息时必须带**(如 `SendUserFile`)。
+- `DAKA_FORCE=1` — 绕过「当地 10 点后才推」的窗口,只在人工手动打卡时用。
+  定时任务不要带 —— 那个窗口是同日多项能合并成一张卡的前提。
 
 stdout 打印 JSON。
 

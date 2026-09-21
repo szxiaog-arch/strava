@@ -317,10 +317,40 @@ def load_acts(path):
     return d
 
 
+def merge_polylines(acts, path):
+    """把第二份(只取最近几条、带 GPS 轨迹)的 polyline 并进主列表。
+
+    为什么要拆两次调用:list_activities 的 include_polyline 是全有或全无,
+    40 条全带轨迹约 41KB,一次灌进上下文会撞到每分钟输入 token 的限流
+    (2026-09-21 实测两个 run 各卡了 10 分半)。可轨迹其实只有两处要用 ——
+    判时区的「最近一条带 GPS 的活动」和当天要出卡那条 —— 其余只是用来数
+    「本月第几次」。所以主列表不带轨迹,再用一份少量的补上。
+    """
+    if not path or not os.path.exists(path):
+        return acts
+    try:
+        extra = load_acts(path)
+    except Exception as e:
+        print(f"[warn] polyline 补充文件读取失败,退回无 GPS: {e}", file=sys.stderr)
+        return acts
+    by_id = {str(a["id"]): a for a in acts}
+    hit = 0
+    for a in extra:
+        poly = a.get("reduced_polyline")
+        target = by_id.get(str(a.get("id")))
+        if poly and target is not None and not target.get("reduced_polyline"):
+            target["reduced_polyline"] = poly
+            hit += 1
+    print(f"[info] 从 {os.path.basename(path)} 补了 {hit} 条 GPS 轨迹", file=sys.stderr)
+    return acts
+
+
 def main():
     acts = load_acts(sys.argv[1])
     state = json.load(open(sys.argv[2], encoding="utf-8")) if os.path.exists(sys.argv[2]) else {}
     outdir = os.path.abspath(sys.argv[3] if len(sys.argv) > 3 else HERE)
+    if len(sys.argv) > 4:
+        acts = merge_polylines(acts, sys.argv[4])
     os.makedirs(outdir, exist_ok=True)
     now_utc = datetime.now(timezone.utc)
     if os.environ.get("FAKE_UTC"):                      # 测试用
