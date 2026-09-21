@@ -11,6 +11,9 @@ from datetime import datetime, timedelta, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WINDOW_OPEN_HOUR = 10     # 当地时间几点之后开始推送当天的新活动
+# 人工手动打卡时置 DAKA_FORCE=1 绕过上面的时间窗 —— 用户明确要卡,
+# 就不该因为「当地还没到 10 点」把他挡回去。定时任务不设这个变量。
+FORCE = os.environ.get("DAKA_FORCE") == "1"
 SAFETY_HOURS = 6          # 兜底:活动挂了这么久还没推,无视时区强推
 EMPTY_NOTE_HOUR = 21      # 当地时间几点之后,若当天无活动发一句提示
 FALLBACK_TZ = "Asia/Hong_Kong"
@@ -337,7 +340,7 @@ def main():
         if k in processed:
             pending.pop(k)
 
-    window_open = local_now.hour >= WINDOW_OPEN_HOUR
+    window_open = FORCE or local_now.hour >= WINDOW_OPEN_HOUR
 
     # 未推送的活动按「本地日期」分组 —— 一天一张卡
     days = {}
