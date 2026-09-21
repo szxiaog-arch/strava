@@ -14,6 +14,10 @@ WINDOW_OPEN_HOUR = 10     # 当地时间几点之后开始推送当天的新活�
 # 人工手动打卡时置 DAKA_FORCE=1 绕过上面的时间窗 —— 用户明确要卡,
 # 就不该因为「当地还没到 10 点」把他挡回去。定时任务不设这个变量。
 FORCE = os.environ.get("DAKA_FORCE") == "1"
+# 云端投递(SendUserFile)没有「编辑已发消息」这回事,所以必须按天硬去重:
+# 某天已经出过卡,当天后来的新活动只标记、不再出第二张。Telegram 那条链路
+# 能原地改图,不需要这个开关。
+DAY_ONCE = os.environ.get("DAKA_DAY_ONCE") == "1"
 SAFETY_HOURS = 6          # 兜底:活动挂了这么久还没推,无视时区强推
 EMPTY_NOTE_HOUR = 21      # 当地时间几点之后,若当天无活动发一句提示
 FALLBACK_TZ = "Asia/Hong_Kong"
@@ -340,6 +344,7 @@ def main():
         if k in processed:
             pending.pop(k)
 
+    days_sent = list(state.get("days_sent", []))
     window_open = FORCE or local_now.hour >= WINDOW_OPEN_HOUR
 
     # 未推送的活动按「本地日期」分组 —— 一天一张卡
@@ -359,6 +364,12 @@ def main():
                 processed.add(str(a["id"]))
                 pending.pop(str(a["id"]), None)
             print(f"[skip] {day} 早于回填窗口({MAX_BACKFILL_DAYS} 天),只标记不推送", file=sys.stderr)
+            continue
+        if DAY_ONCE and day in days_sent:
+            for a in days[day]:
+                processed.add(str(a["id"]))
+                pending.pop(str(a["id"]), None)
+            print(f"[skip] {day} 当天已出过卡(DAY_ONCE),新活动只标记不推送", file=sys.stderr)
             continue
         # 这一天的全部活动(含已推送过的),这样补图时卡片是完整的一天
         same_day = sorted([a for a in acts if day_key(a) == day],
@@ -380,6 +391,7 @@ def main():
             "count": len(same_day),
             "activity_ids": [str(a["id"]) for a in same_day],
         })
+        days_sent.append(day)
         for a in days[day]:
             processed.add(str(a["id"]))
             pending.pop(str(a["id"]), None)
@@ -393,6 +405,7 @@ def main():
         "processed_ids": sorted(processed, key=int)[-KEEP_PROCESSED:],
         "pending": pending,
         "day_messages": {k: v for k, v in sorted(day_messages.items())[-KEEP_DAY_MESSAGES:]},
+        "days_sent": sorted(set(days_sent))[-KEEP_DAY_MESSAGES:],
         "last_empty_note": today if empty_note else state.get("last_empty_note", ""),
     }
     print(json.dumps({
